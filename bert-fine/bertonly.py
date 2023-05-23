@@ -17,16 +17,6 @@ tokenizer = BertTokenizer.from_pretrained(
     'bert-base-uncased', do_lower_case=True)
 batch_size = 32
 
-# summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
-# def summarize_text(text: str, max_len: int) -> str:
-#     try:
-#         summary = summarizer(text, max_length=max_len,
-#                              min_length=10, do_sample=False)
-#         return summary[0]["summary_text"]
-#     except IndexError as ex:
-#         # logging.warning(
-#         #     "Sequence length too large for model, cutting text in half and calling again")
-#         return summarize_text(text=text[:(len(text) // 2)], max_len=max_len//2) + summarize_text(text=text[(len(text) // 2):], max_len=max_len//2)
 
 
 def get_dataset(tar_path):
@@ -74,6 +64,16 @@ def get_dataset(tar_path):
     input_ids = torch.cat(input_ids, dim=0)
     attention_masks = torch.cat(attention_masks, dim=0)
     labels = torch.tensor(targets)
+    
+    
+#     dn = 'train/' if 'train' in tar_path else 'test/'
+#     dn = '/netscratch/minouei/sources/imb/bertim/'+dn
+#     torch.save(input_ids, dn+'input_ids.pt')
+#     torch.save(attention_masks, dn+'attention_masks.pt')
+#     torch.save(labels, dn+'labels.pt')
+#     input_ids = torch.load(dn+'input_ids.pt')
+#     attention_masks = torch.load(dn+'attention_masks.pt')
+#     labels = torch.load(dn+'labels.pt')
     dataset = TensorDataset(input_ids, attention_masks, labels)
     return dataset
 
@@ -111,7 +111,7 @@ optimizer = AdamW(model.parameters(),
                   eps=1e-8  # args.adam_epsilon  - default is 1e-8.
                   )
 
-epochs = 10
+epochs = 4
 
 # Total number of training steps is [number of batches] x [number of epochs].
 # (Note that this is not the same as the number of training samples).
@@ -286,6 +286,7 @@ for epoch_i in range(0, epochs):
     )
 print("")
 print("Training complete!")
+torch.save(model, 'bert_model3')
 
 print("Total training took {:} (h:mm:ss)".format(
     format_time(time.time()-total_t0)))
