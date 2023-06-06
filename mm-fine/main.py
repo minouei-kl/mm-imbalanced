@@ -6,12 +6,12 @@ import torch.nn as nn
 from transformers import AdamW, get_linear_schedule_with_warmup
 import random
 from torch.utils.tensorboard import SummaryWriter
-
 # from otemodel import Model
 from NaiveCatModel import Model
 from dataset import RvlDataset
 from train_val import *
 from Config import config
+from utils import *
 
 
 if torch.cuda.is_available():
@@ -34,7 +34,7 @@ class FocalLoss(nn.Module):
         return loss.mean()
 
 
-def get_imbalanced_sampler(labels,  replacement=True):
+def get_balanced_sampler(labels,  replacement=True):
 
     num_samples = len(labels)
     labels = torch.LongTensor(np.array(labels))
@@ -63,13 +63,13 @@ dataset_val = RvlDataset(
     tar_path=config.tar_path.replace('train', 'test'))
 
 
-train_sampler = get_imbalanced_sampler(train_dataset.targets)
+train_sampler = get_balanced_sampler(train_dataset.targets)
 
 train_dataloader = DataLoader(train_dataset, batch_size=batch_size, sampler=train_sampler,  # shuffle=True,
-                              num_workers=10)
+                              pin_memory=True, num_workers=10)
 
 val_dataloader = DataLoader(dataset_val, batch_size=batch_size,
-                            shuffle=False, num_workers=10)
+                            shuffle=False, pin_memory=True, num_workers=10)
 
 
 model = Model(config)
@@ -77,7 +77,7 @@ model = Model(config)
 final_model = model.to(device)
 
 
-parameter_dict_opt = {'l_r': 3e-5, 'eps': 1e-8}
+parameter_dict_opt = {'l_r': 2e-5, 'eps': 1e-8}
 
 # Create the optimizer
 optimizer = AdamW(final_model.parameters(),
@@ -85,16 +85,18 @@ optimizer = AdamW(final_model.parameters(),
                   eps=parameter_dict_opt['eps'])
 
 # Total number of training steps
-total_steps = len(train_dataloader) * config.epoch
-
+# total_steps = len(train_dataloader) * config.epoch
 # Set up the learning rate scheduler
-scheduler = get_linear_schedule_with_warmup(optimizer,
-                                            num_warmup_steps=1000,  # Default value
-                                            num_training_steps=total_steps)
+# scheduler = get_linear_schedule_with_warmup(optimizer,
+#                                             num_warmup_steps=1000,  # Default value
+#                                             num_training_steps=total_steps)
+
+scheduler = get_cosine_schedule_with_warmup(
+    optimizer, config.epoch, len(train_dataloader))
 
 
 # Instantiate the tensorboard summary writer
-writer = SummaryWriter('runs/exp3')
+writer = SummaryWriter('runs/final')
 
 # cls_num_list = [19997, 14712, 10823, 7962, 5857, 4306, 3167,
 #                 2331, 1715, 1261, 928, 682, 502, 369, 271, 200]
@@ -102,11 +104,15 @@ writer = SummaryWriter('runs/exp3')
 # per_cls_weights = per_cls_weights / \
 #     np.sum(per_cls_weights) * len(cls_num_list)
 # per_cls_weights = torch.FloatTensor(per_cls_weights).cuda()
-
-# loss_fn = nn.CrossEntropyLoss()
-loss_fn = FocalLoss()
+loss_fn = nn.CrossEntropyLoss()
+# loss_fn = FocalLoss()
 
 train(model=final_model, loss_fn=loss_fn, optimizer=optimizer, scheduler=scheduler,
       train_dataloader=train_dataloader, val_dataloader=val_dataloader,
       epochs=config.epoch, evaluation=True, device=device, save_best=True,
       file_path='./saved_models/best_model.pt', writer=writer)
+
+
+# flag Class Accuracy: [0.909, 0.889, 0.977, 0.953, 0.860, 0.853, 0.886, 0.906, 0.949, 0.825, 0.818, 0.817,
+#                       0.698, 0.760, 0.950, 0.825]
+# 4 | - | 0.590614 | 0.709787 | 86.78 | 793.41
