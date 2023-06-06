@@ -29,7 +29,7 @@ def get_cosine_schedule_with_warmup(optimizer, epochs, n_steps):
 
         return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda, last_epoch, verbose=False)
 
-    warmup_proportion = 2/epochs
+    warmup_proportion = 1/epochs
     # n_steps = int(np.ceil(n_samples / batch_size))
     num_training_steps = n_steps * epochs
     num_warmup_steps = int(warmup_proportion * num_training_steps)
@@ -97,3 +97,44 @@ def my_plot_confusion_matrix(y_true, y_pred, classes,
     fig.tight_layout()
     plt.savefig('confusion_matrix.png', format='png')
     return ax
+
+
+class AverageMeter(object):
+
+    def __init__(self, name, fmt=':f'):
+        self.name = name
+        self.fmt = fmt
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+
+    def __str__(self):
+        fmtstr = '{name} {val' + self.fmt + '} ({avg' + self.fmt + '})'
+        return fmtstr.format(**self.__dict__)
+
+
+def accuracy(output, target, topk=(1,)):
+
+    with torch.no_grad():
+        maxk = max(topk)
+        batch_size = target.size(0)
+
+        _, pred = output.topk(maxk, 1, True, True)
+        pred = pred.t()
+        correct = pred.eq(target.view(1, -1).expand_as(pred))
+
+        res = []
+        for k in topk:
+            correct_k = correct[:k].reshape(-1).float().sum(0, keepdim=True)
+            res.append(correct_k.mul_(100.0 / batch_size))
+        return res
