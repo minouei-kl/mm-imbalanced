@@ -11,6 +11,7 @@ import tarfile
 import os
 from sklearn.metrics import confusion_matrix
 from utils import *
+from tensorboardX import SummaryWriter
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 tokenizer = BertTokenizer.from_pretrained(
@@ -18,62 +19,61 @@ tokenizer = BertTokenizer.from_pretrained(
 batch_size = 32
 
 
-
 def get_dataset(tar_path):
 
-    txts = []
-    targets = []
+    # txts = []
+    # targets = []
 
-    with open(tar_path.replace('tar', 'json'), "rb") as json_file:
-        json_data = json.load(json_file)
+    # with open(tar_path.replace('tar', 'json'), "rb") as json_file:
+    #     json_data = json.load(json_file)
 
-    with tarfile.open(tar_path, mode="r|*") as stream:
-        for info in stream:
-            if not info.isfile():
-                continue
-            file_path = info.name
-            if file_path is None or 'png' not in file_path:
-                continue
-            filename = os.path.basename(file_path)
-            if not filename in json_data.keys():
-                continue
-            # data = stream.extractfile(info).read()
-            parent_dir_name = os.path.basename(
-                os.path.dirname(file_path))
-            target = int(parent_dir_name)
-            targets.append(target)
-            txt = json_data[filename]
-            txts.append(txt)
+    # with tarfile.open(tar_path, mode="r|*") as stream:
+    #     for info in stream:
+    #         if not info.isfile():
+    #             continue
+    #         file_path = info.name
+    #         if file_path is None or 'png' not in file_path:
+    #             continue
+    #         filename = os.path.basename(file_path)
+    #         if not filename in json_data.keys():
+    #             continue
+    #         # data = stream.extractfile(info).read()
+    #         parent_dir_name = os.path.basename(
+    #             os.path.dirname(file_path))
+    #         target = int(parent_dir_name)
+    #         targets.append(target)
+    #         txt = json_data[filename]
+    #         txts.append(txt)
 
-    input_ids = []
-    attention_masks = []
+    # input_ids = []
+    # attention_masks = []
 
-    for txt in txts:
-        encoded_dict = tokenizer.encode_plus(
-            txt,                      # Sentence to encode.
-            add_special_tokens=True,  # Add '[CLS]' and '[SEP]'
-            pad_to_max_length=True, truncation=True, max_length=512,
-            return_attention_mask=True,   # Construct attn. masks.
-            return_tensors='pt',     # Return pytorch tensors.
-        )
-        # Add the encoded sentence to the list.
-        input_ids.append(encoded_dict['input_ids'])
-        # And its attention mask (simply differentiates padding from non-padding).
-        attention_masks.append(encoded_dict['attention_mask'])
+    # for txt in txts:
+    #     encoded_dict = tokenizer.encode_plus(
+    #         txt,                      # Sentence to encode.
+    #         add_special_tokens=True,  # Add '[CLS]' and '[SEP]'
+    #         pad_to_max_length=True, truncation=True, max_length=512,
+    #         return_attention_mask=True,   # Construct attn. masks.
+    #         return_tensors='pt',     # Return pytorch tensors.
+    #     )
+    #     # Add the encoded sentence to the list.
+    #     input_ids.append(encoded_dict['input_ids'])
+    #     # And its attention mask (simply differentiates padding from non-padding).
+    #     attention_masks.append(encoded_dict['attention_mask'])
 
-    input_ids = torch.cat(input_ids, dim=0)
-    attention_masks = torch.cat(attention_masks, dim=0)
-    labels = torch.tensor(targets)
-    
-    
-#     dn = 'train/' if 'train' in tar_path else 'test/'
-#     dn = '/netscratch/minouei/sources/imb/bertim/'+dn
-#     torch.save(input_ids, dn+'input_ids.pt')
-#     torch.save(attention_masks, dn+'attention_masks.pt')
-#     torch.save(labels, dn+'labels.pt')
-#     input_ids = torch.load(dn+'input_ids.pt')
-#     attention_masks = torch.load(dn+'attention_masks.pt')
-#     labels = torch.load(dn+'labels.pt')
+    # input_ids = torch.cat(input_ids, dim=0)
+    # attention_masks = torch.cat(attention_masks, dim=0)
+    # labels = torch.tensor(targets)
+
+    dn = 'train/' if 'train' in tar_path else 'test/'
+
+    # torch.save(input_ids, dn+'input_ids.pt')
+    # torch.save(attention_masks, dn+'attention_masks.pt')
+    # torch.save(labels, dn+'labels.pt')
+    input_ids = torch.load(dn+'input_ids.pt')
+    attention_masks = torch.load(dn+'attention_masks.pt')
+    labels = torch.load(dn+'labels.pt')
+
     dataset = TensorDataset(input_ids, attention_masks, labels)
     return dataset
 
@@ -115,13 +115,15 @@ epochs = 4
 
 # Total number of training steps is [number of batches] x [number of epochs].
 # (Note that this is not the same as the number of training samples).
-# total_steps = len(train_dataloader) * epochs
+total_steps = len(train_dataloader) * epochs
 # Create the learning rate scheduler.
 # scheduler = get_linear_schedule_with_warmup(optimizer,
-#                                             num_warmup_steps=0,  # Default value in run_glue.py
+#                                             num_warmup_steps=1000,  # Default value in run_glue.py
 #                                             num_training_steps=total_steps)
 scheduler = get_cosine_schedule_with_warmup(
     optimizer, epochs, len(train_dataloader))
+tf_writer = SummaryWriter(
+    log_dir=os.path.join('root_log', 'bert5'))
 
 
 def flat_accuracy(preds, labels):
@@ -161,6 +163,8 @@ for epoch_i in range(0, epochs):
     print('======== Epoch {:} / {:} ========'.format(epoch_i + 1, epochs))
     print('Training...')
     # Measure how long the training epoch takes.
+    losses = AverageMeter('Loss', ':.4e')
+    top1 = AverageMeter('Acc@1', ':6.2f')
     t0 = time.time()
     total_train_loss = 0
     model.train()
@@ -185,6 +189,12 @@ for epoch_i in range(0, epochs):
                        labels=b_labels)
         loss = output.loss
         total_train_loss += loss.item()
+
+        logits = output.logits
+        acc1, acc5 = accuracy(logits, b_labels, topk=(1, 5))
+        losses.update(loss.item(), b_input_ids.size(0))
+        top1.update(acc1[0], b_input_ids.size(0))
+
         # Perform a backward pass to calculate the gradients.
         loss.backward()
         # Clip the norm of the gradients to 1.0.
@@ -199,6 +209,9 @@ for epoch_i in range(0, epochs):
 
     # Calculate the average loss over all of the batches.
     avg_train_loss = total_train_loss / len(train_dataloader)
+
+    tf_writer.add_scalar('loss/train', losses.avg, epoch_i)
+    tf_writer.add_scalar('acc/train_top1', top1.avg, epoch_i)
 
     # Measure how long this epoch took.
     training_time = format_time(time.time() - t0)
@@ -265,7 +278,7 @@ for epoch_i in range(0, epochs):
     #print("  Validation took: {:}".format(validation_time))
     # Record all statistics from this epoch.
     report_results(
-        all_targets, all_preds, 'bert', str(epoch_i))
+        all_targets, all_preds, 'logs', str(epoch_i))
     cf = confusion_matrix(all_targets, all_preds).astype(float)
     cls_cnt = cf.sum(axis=1)
     cls_hit = np.diag(cf)
@@ -286,9 +299,9 @@ for epoch_i in range(0, epochs):
     )
 print("")
 print("Training complete!")
-torch.save(model, 'bert_model3')
+torch.save(model, 'bert_model4')
 
 print("Total training took {:} (h:mm:ss)".format(
     format_time(time.time()-total_t0)))
-# flag Class Accuracy: [0.944, 0.911, 0.971, 0.934, 0.859, 0.865, 0.860, 0.894, 0.802, 0.773, 0.765, 0.737,
-#                       0.567, 0.620, 0.955, 0.513]
+# flag Class Accuracy: [0.942, 0.906, 0.979, 0.938, 0.859, 0.860, 0.883, 0.893, 0.842, 0.784, 0.763, 0.746,
+#                       0.569, 0.630, 0.959, 0.568]
