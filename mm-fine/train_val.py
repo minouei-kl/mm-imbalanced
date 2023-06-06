@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import time
 from sklearn.metrics import confusion_matrix
+from utils import *
 
 
 def train(model, loss_fn, optimizer, scheduler, train_dataloader, val_dataloader=None, epochs=4, evaluation=False, device='cpu', param_dict_model=None, param_dict_opt=None, save_best=False, file_path='./saved_models/best_model.pt', writer=None):
@@ -64,7 +65,6 @@ def train(model, loss_fn, optimizer, scheduler, train_dataloader, val_dataloader
             optimizer.step()
             scheduler.step()
 
-#             break
             # Print the loss values and time elapsed for every 20 batches
             if (step % 20 == 0 and step != 0) or (step == len(train_dataloader) - 1):
                 # Calculate time elapsed for 20 batches
@@ -94,7 +94,7 @@ def train(model, loss_fn, optimizer, scheduler, train_dataloader, val_dataloader
             # After the completion of each training epoch, measure the model's performance
             # on our validation set.
             val_loss, val_accuracy = evaluate(
-                model, loss_fn, val_dataloader, device)
+                model, loss_fn, val_dataloader, device, epoch_i)
 
             # Print performance over the entire training data
             time_elapsed = time.time() - t0_epoch
@@ -123,10 +123,18 @@ def train(model, loss_fn, optimizer, scheduler, train_dataloader, val_dataloader
 
         print("\n")
 
+    torch.save({
+        'epoch': epoch_i+1,
+        'model_params': param_dict_model,
+        'opt_params': param_dict_opt,
+        'model_state_dict': model.state_dict(),
+        'opt_state_dict': optimizer.state_dict(),
+        'sch_state_dict': scheduler.state_dict()
+    }, './saved_models/lastepoch.pt')
     print("Training complete!")
 
 
-def evaluate(model, loss_fn, val_dataloader, device):
+def evaluate(model, loss_fn, val_dataloader, device, epoch_i):
     """After the completion of each training epoch, measure the model's performance
     on our validation set.
     """
@@ -167,6 +175,9 @@ def evaluate(model, loss_fn, val_dataloader, device):
         # Calculate the accuracy rate
         accuracy = (preds == b_labels).cpu().numpy().mean() * 100
         val_accuracy.append(accuracy)
+
+    report_results(
+        all_targets, all_preds, 'logs', str(epoch_i))
     cf = confusion_matrix(all_targets, all_preds).astype(float)
     cls_cnt = cf.sum(axis=1)
     cls_hit = np.diag(cf)
